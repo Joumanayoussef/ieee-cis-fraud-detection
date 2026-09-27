@@ -23,24 +23,24 @@
     },
     {
       "model": "LightGBM (scale_pos_weight)",
-      "roc_auc": 0.8194,
-      "pr_auc": 0.249,
-      "threshold": 0.1063,
-      "precision": 0.2548,
-      "recall": 0.4087,
-      "f1": 0.3139,
-      "recall_at_90p": 0.0,
+      "roc_auc": 0.8845,
+      "pr_auc": 0.4672,
+      "threshold": 0.7971,
+      "precision": 0.5571,
+      "recall": 0.3847,
+      "f1": 0.4551,
+      "recall_at_90p": 0.2141,
       "confusion_matrix": [
         [
-          54655,
-          2395
+          56437,
+          613
         ],
         [
-          1185,
-          819
+          1233,
+          771
         ]
       ],
-      "best_iteration": 1
+      "best_iteration": 151
     },
     {
       "model": "XGBoost (scale_pos_weight)",

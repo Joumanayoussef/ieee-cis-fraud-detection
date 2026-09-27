@@ -163,7 +163,7 @@ def train_all(
 
     params_lgb_base = {
         "objective":      "binary",
-        "metric":         ["binary_logloss", "auc"],
+        "metric":         ["auc", "binary_logloss"],   # auc drives early stopping
         "learning_rate":  0.05,
         "num_leaves":     63,
         "min_child_samples": 50,
@@ -180,7 +180,7 @@ def train_all(
         lgb_ds_train,
         num_boost_round=500,
         valid_sets=[lgb_ds_val],
-        callbacks=[lgb.early_stopping(50, verbose=False), lgb.log_evaluation(-1)],
+        callbacks=[lgb.early_stopping(50, first_metric_only=True, verbose=False), lgb.log_evaluation(-1)],
     )
     prob_val_lgb = cb_lgb_base.predict(X_val)
     thr_lgb      = best_f1_threshold(y_val.values, prob_val_lgb)
@@ -218,7 +218,7 @@ def train_all(
         lgb_ds_train2,
         num_boost_round=500,
         valid_sets=[lgb_ds_val2],
-        callbacks=[lgb.early_stopping(50, verbose=False), lgb.log_evaluation(-1)],
+        callbacks=[lgb.early_stopping(50, first_metric_only=True, verbose=False), lgb.log_evaluation(-1)],
     )
     prob_val_lgb_w  = cb_lgb_w.predict(X_val)
     thr_lgb_w       = best_f1_threshold(y_val.values, prob_val_lgb_w)
