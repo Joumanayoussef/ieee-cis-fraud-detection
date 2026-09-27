@@ -136,9 +136,10 @@ source .venv/bin/activate        # Windows: .venv\Scripts\activate
 # 3. Install dependencies
 pip install -r requirements.txt
 
-# 4. Download data (requires Kaggle account + competition rules accepted)
-#    Place train_transaction.csv and train_identity.csv in data/raw/
-python -c "import kagglehub; kagglehub.competition_download('ieee-fraud-detection')"
+# 4. Download data
+#    a. Accept competition rules at kaggle.com/competitions/ieee-fraud-detection/rules
+#    b. Download from kaggle.com/competitions/ieee-fraud-detection/data
+#    c. Place train_transaction.csv and train_identity.csv in data/raw/
 
 # 5. Run the full pipeline
 python src/data.py          # load, sample, split, cache parquet
