@@ -2,6 +2,14 @@
 
 Credit card fraud detection on the IEEE-CIS Kaggle dataset using time-based validation, gradient boosting, imbalance handling, and SHAP/LIME explainability.
 
+**Key Results** (50 % stratified sample, ~295 K transactions):
+- **Best model:** LightGBM (no class weighting) — ROC-AUC **0.8958**, PR-AUC **0.5059**
+- **Business trade-off:** at the chosen threshold, the model catches **42.8 % of fraud cases** at **55 % precision** (~12 false alarms per 1,000 legitimate transactions)
+- **Top signals:** how many addresses or accounts are linked to a card (C1, C13, C14) and how often a card appears in the training data (`card1_freq`) are the strongest predictors across both SHAP and permutation importance
+- **LIME caveat:** local explanations were unstable on this 426-feature dataset and disagreed with the global SHAP ranking — a known limitation of LIME on high-dimensional tabular data
+
+---
+
 ## Background
 
 Originally started as a course project at Zewail City; fully rebuilt as an individual project.
@@ -12,10 +20,26 @@ Originally started as a course project at Zewail City; fully rebuilt as an indiv
 
 **Source:** [IEEE-CIS Fraud Detection — Kaggle 2019](https://www.kaggle.com/competitions/ieee-fraud-detection)  
 590,540 anonymised e-commerce transactions provided by Vesta Corporation.  
-Features: `TransactionAmt`, `card1–6`, `addr1–2`, `P_/R_emaildomain`, 339 anonymised `V`-features, and identity metadata.  
 **No data is included in this repository.** Download instructions below.
 
-> **Memory note:** A **50 % stratified random sample (~295,270 rows, seed=42)** was used during this build because free RAM was ~4.5 GB (the full 590 K rows require ~6 GB+ peak for pandas + model training). The sample preserves the fraud rate and is sorted by `TransactionDT` before splitting so the temporal ordering is maintained. All reported numbers are on this sample; see `reports/metrics.json` for the `sample_note` field.
+### Feature Families
+
+| Family | Range | Description |
+|--------|-------|-------------|
+| `TransactionAmt` | — | Transaction amount in USD |
+| `C1`–`C14` | 14 features | Counting features — e.g., how many addresses or payment cards are associated with the card number. Exact definitions withheld by the data provider. |
+| `D1`–`D15` | 15 features | Time-delta features — e.g., days since the previous transaction on the same card. Exact definitions withheld. |
+| `M1`–`M9` | 9 features | Match flags — e.g., whether the name on the card matches the name on the address. Exact definitions withheld. |
+| `V1`–`V339` | 339 features | Vesta-engineered features covering ranking, counting, and entity relations. Exact definitions withheld for privacy. |
+| `card1`–`card6` | 6 features | Payment card attributes (type, category, bank, country) |
+| `addr1`, `addr2` | 2 features | Billing address attributes |
+| `dist1`, `dist2` | 2 features | Distance features |
+| `P_emaildomain`, `R_emaildomain` | 2 features | Purchaser and recipient email domains |
+| `id_01`–`id_38`, `DeviceType`, `DeviceInfo` | ~40 features | Identity and device metadata (from the identity table) |
+
+> Exact feature definitions for the C, D, M, and V groups are withheld by the data provider for privacy. The descriptions above are taken from the official Kaggle competition discussion.
+
+Experiments use a 50 % stratified sample (~295 K transactions, seed 42) of the training data due to computational constraints; the sample preserves the fraud rate and temporal order.
 
 ---
 
@@ -23,14 +47,15 @@ Features: `TransactionAmt`, `card1–6`, `addr1–2`, `P_/R_emaildomain`, 339 an
 
 ### 1. Time-based split — the critical design choice
 
-`TransactionDT` is a seconds-offset timestamp. A random split would place future transactions in the training set, creating data leakage that inflates test metrics.
+`TransactionDT` is a time offset in **seconds** from an unknown reference date. A random split would place future transactions in the training set, creating data leakage that inflates test metrics.
 
-We use a **strict temporal split**:
+We use a **strict temporal split** (day ranges computed as `round(TransactionDT ÷ 86,400)`):
+
 | Split | Rows | Period | Fraud rate |
 |-------|------|--------|------------|
-| Train | 206,689 | DT 86,400 – 10,436,615 | 3.507 % |
-| Validation | 29,527 | DT 10,436,642 – 12,185,566 | 3.658 % |
-| Test | 59,054 | DT 12,185,580 – 15,811,131 | 3.394 % |
+| Train | 206,689 | Days 1–121 | 3.507 % |
+| Validation | 29,527 | Days 121–141 | 3.658 % |
+| Test | 59,054 | Days 141–183 | 3.394 % |
 
 The **validation split** is used exclusively for early stopping and threshold selection.  
 The **test split** is touched exactly once, for final metric reporting.
@@ -44,7 +69,7 @@ Every statistic — missing-value thresholds, imputation medians, frequency-enco
 | Feature | Description |
 |---------|-------------|
 | `log_TransactionAmt` | log(1 + amount) — reduces right-skew |
-| `amt_decimal` | Fractional part of amount — fraud often uses round numbers |
+| `amt_decimal` | Fractional cents of the amount (e.g., 0.99 vs 0.00) |
 | `hour_of_day`, `day_of_week` | Time-of-day and day-of-week from `TransactionDT` |
 | `card1_freq` … `R_emaildomain_freq` | Frequency encoding for card/address/email fields (train only) |
 | `card1_amt_mean`, `card1_amt_std` | Per-card1 amount statistics (train only) |
@@ -96,18 +121,17 @@ The fraud rate is ~3.5 %. A trivial classifier that always predicts "legitimate"
 
 Numbers below are read directly from `reports/figures/`.
 
-**SHAP (global, top 5 by mean |value|):** C13, V70, C14, `card1_freq`, `card1_amt_mean`.
-Two anonymised count features (C13, C14), one anonymised V-feature (V70), and two engineered card-frequency features lead the ranking. `TransactionAmt` ranks 7th in SHAP.
+**Count-based features are the strongest signal** (C13, C14, C1, C11): these rank in the top 5 for both SHAP (by mean |value|) and permutation importance (by mean ROC-AUC drop). They represent how many addresses, accounts, or cards are linked together — a classic fraud signal.
 
-**Permutation importance (top 5 by mean ROC-AUC drop):** C1, C14, `card1_freq`, C11, C13.
-Count features and card1 frequency dominate. Notably, **V70 ranks near the bottom of the permutation top-30** despite being 2nd in SHAP — consistent with V70 being correlated with other V-features that absorb its contribution when it is shuffled in isolation.
+**Card-frequency features also rank highly** (`card1_freq`, `card6_freq`): appearing in the SHAP top 5 and permutation top 5. A card seen rarely in training is a stronger anomaly signal than a high-frequency card.
 
-**TransactionAmt** appears in the SHAP top-10 but is absent from the permutation top-30, suggesting its information is largely captured by the C and card-frequency features.
+**V70 shows a SHAP–permutation gap**: it is ranked 2nd by SHAP but near the bottom of the permutation top-30. This is consistent with V70 being correlated with other V-features — when V70 alone is shuffled, the model compensates via the correlated features, making its individual permutation drop small.
 
-**LR coefficients (top 5 by |coefficient|):** C14, C11, C7, V266, C8.
-The linear model prioritises count and anonymous features — no amount features appear in the top 20. LR agrees with SHAP on the importance of C14 but diverges from SHAP on V70 and `card1_freq`.
+**TransactionAmt appears in the SHAP top-10 but not in the permutation top-30**, suggesting that the C and card-frequency features capture most of its information.
 
-**LIME (one true positive, test row 29):** The local explanation is dominated entirely by anonymised V-features (V113, V330, V118, V162, …) with no overlap with the global SHAP top features. This disagreement is consistent with a known limitation of LIME on high-dimensional tabular data: with 426 correlated features, the local linear surrogate is sensitive to the perturbation neighbourhood and can be unstable.
+**The linear model (LR) agrees on the direction but not the ranking**: its top coefficients are C14, C11, C7, V266, C8 — all count or anonymous features. No amount features appear in the LR top 20, in contrast to their moderate presence in SHAP.
+
+**LIME was unstable on this instance**: the local explanation for the inspected true positive (test row 29) is dominated entirely by anonymised V-features (V113, V330, V118, V162, …) with no overlap with the global SHAP top features. With 426 correlated features, LIME's local linear surrogate is sensitive to the perturbation neighbourhood and should not be interpreted as a reliable local explanation here.
 
 ---
 
@@ -173,7 +197,7 @@ ieee-cis-fraud-detection/
 
 ## Limitations
 
-1. **50 % sample** — RAM constraint at build time (~4.5 GB free). Full-dataset results may differ slightly; ranking direction is expected to hold.
+1. **50 % sample** — Used due to computational constraints. Full-data results may differ.
 2. **Anonymised V-features** — V1–V339 are opaque; feature engineering is limited to documented metadata.
 3. **Static threshold** — Chosen once on validation; needs periodic recalibration in production.
 4. **No temporal decay** — Model weights all training history equally; fraud patterns evolve.
