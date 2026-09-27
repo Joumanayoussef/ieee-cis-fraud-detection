@@ -65,14 +65,14 @@ The fraud rate is ~3.5 %. A trivial classifier that always predicts "legitimate"
 | Model | ROC-AUC | PR-AUC | Precision | Recall | F1 | Recall@90P |
 |-------|---------|--------|-----------|--------|----|------------|
 | **LightGBM (no weight)** | **0.8958** | **0.5059** | 0.5497 | 0.4276 | **0.4811** | 0.2161 |
-| LightGBM (scale\_pos\_weight) | 0.8194 | 0.2490 | 0.2548 | 0.4087 | 0.3139 | 0.000 |
+| LightGBM (scale\_pos\_weight) | 0.8845 | 0.4672 | 0.5571 | 0.3847 | 0.4551 | 0.2141 |
 | XGBoost (scale\_pos\_weight) | 0.8928 | 0.4799 | 0.5107 | 0.4162 | 0.4586 | **0.2320** |
 | LR (balanced) | 0.8016 | 0.1711 | 0.2942 | 0.3029 | 0.2985 | 0.0060 |
 | LR + SMOTE | 0.8019 | 0.1742 | 0.3028 | 0.3014 | 0.3021 | 0.0060 |
 
 > Numbers taken directly from `reports/metrics.json`. All thresholds chosen on the validation split; test set touched once for final reporting.
 >
-> **Best model:** LightGBM without class weighting achieves the highest ROC-AUC (0.8958) and PR-AUC (0.5059). The `scale_pos_weight` variant stopped at iteration 1 — the aggressive weighting destabilised training, yielding a degenerate model. XGBoost with `scale_pos_weight` achieved the highest Recall@90P (0.2320).
+> **Best model:** LightGBM without class weighting achieves the highest ROC-AUC (0.8958) and PR-AUC (0.5059). The three gradient-boosting models are close on ROC-AUC (0.89+); the two LR baselines lag at ~0.80. All five are sensible models — the gap reflects tree-based vs. linear capacity on 426 mixed features.
 
 ---
 
@@ -94,10 +94,20 @@ The fraud rate is ~3.5 %. A trivial classifier that always predicts "legitimate"
 
 ## Explainability Findings
 
-- **TransactionAmt** and its engineered variants (`log_TransactionAmt`, `amt_over_card1_mean`) are consistently top-ranked by both SHAP and permutation importance.
-- **card1_freq** and **card1_amt_mean** rank highly — frequency and deviation from typical spend are strong fraud signals.
-- **LR coefficients agree** on card-frequency features but assign more weight to scaled amount features, reflecting the linear boundary.
-- **LIME confirms** the SHAP direction for the inspected true positive: high card frequency + low amount-over-mean → strong fraud signal.
+Numbers below are read directly from `reports/figures/`.
+
+**SHAP (global, top 5 by mean |value|):** C13, V70, C14, `card1_freq`, `card1_amt_mean`.
+Two anonymised count features (C13, C14), one anonymised V-feature (V70), and two engineered card-frequency features lead the ranking. `TransactionAmt` ranks 7th in SHAP.
+
+**Permutation importance (top 5 by mean ROC-AUC drop):** C1, C14, `card1_freq`, C11, C13.
+Count features and card1 frequency dominate. Notably, **V70 ranks near the bottom of the permutation top-30** despite being 2nd in SHAP — consistent with V70 being correlated with other V-features that absorb its contribution when it is shuffled in isolation.
+
+**TransactionAmt** appears in the SHAP top-10 but is absent from the permutation top-30, suggesting its information is largely captured by the C and card-frequency features.
+
+**LR coefficients (top 5 by |coefficient|):** C14, C11, C7, V266, C8.
+The linear model prioritises count and anonymous features — no amount features appear in the top 20. LR agrees with SHAP on the importance of C14 but diverges from SHAP on V70 and `card1_freq`.
+
+**LIME (one true positive, test row 29):** The local explanation is dominated entirely by anonymised V-features (V113, V330, V118, V162, …) with no overlap with the global SHAP top features. This disagreement is consistent with a known limitation of LIME on high-dimensional tabular data: with 426 correlated features, the local linear surrogate is sensitive to the perturbation neighbourhood and can be unstable.
 
 ---
 
