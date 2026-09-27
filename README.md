@@ -5,7 +5,7 @@ Credit card fraud detection on the IEEE-CIS Kaggle dataset using time-based vali
 **Key Results** (50 % stratified sample, ~295 K transactions):
 - **Best model:** LightGBM (no class weighting) — ROC-AUC **0.8958**, PR-AUC **0.5059**
 - **Business trade-off:** at the chosen threshold, the model catches **42.8 % of fraud cases** at **55 % precision** (~12 false alarms per 1,000 legitimate transactions)
-- **Top signals:** how many addresses or accounts are linked to a card (C1, C13, C14) and how often a card appears in the training data (`card1_freq`) are the strongest predictors across both SHAP and permutation importance
+- **Top signals:** count-based features (C13, C14) and card frequency (`card1_freq`) rank in the top 5 of both SHAP and permutation importance
 - **LIME caveat:** local explanations were unstable on this 426-feature dataset and disagreed with the global SHAP ranking — a known limitation of LIME on high-dimensional tabular data
 
 ---
@@ -121,15 +121,15 @@ The fraud rate is ~3.5 %. A trivial classifier that always predicts "legitimate"
 
 Numbers below are read directly from `reports/figures/`.
 
-**Count-based features are the strongest signal** (C13, C14, C1, C11): these rank in the top 5 for both SHAP (by mean |value|) and permutation importance (by mean ROC-AUC drop). They represent how many addresses, accounts, or cards are linked together — a classic fraud signal.
+**Count-based features are the strongest signal**: C13 (SHAP #1, permutation #5) and C14 (SHAP #3, permutation #2) rank in the top 5 of both methods. C1 leads permutation importance (#1) but ranks only 8th in SHAP; C11 is 4th in permutation but 12th in SHAP.
 
-**Card-frequency features also rank highly** (`card1_freq`, `card6_freq`): appearing in the SHAP top 5 and permutation top 5. A card seen rarely in training is a stronger anomaly signal than a high-frequency card.
+**Card-frequency features also rank highly**: `card1_freq` appears in both the SHAP top 5 (#4) and the permutation top 5 (#3). `card6_freq` ranks 6th in both but does not make either top 5.
 
 **V70 shows a SHAP–permutation gap**: it is ranked 2nd by SHAP but near the bottom of the permutation top-30. This is consistent with V70 being correlated with other V-features — when V70 alone is shuffled, the model compensates via the correlated features, making its individual permutation drop small.
 
 **TransactionAmt appears in the SHAP top-10 but not in the permutation top-30**, suggesting that the C and card-frequency features capture most of its information.
 
-**The linear model (LR) agrees on the direction but not the ranking**: its top coefficients are C14, C11, C7, V266, C8 — all count or anonymous features. No amount features appear in the LR top 20, in contrast to their moderate presence in SHAP.
+**The linear model (LR) partially overlaps with SHAP**: LR's top absolute coefficients are C14, C11, C7, V266, C8 — both methods rank C14 highly, but the remaining LR top features otherwise differ from the SHAP ranking. No amount features appear in the LR top 20, in contrast to their moderate presence in SHAP.
 
 **LIME was unstable on this instance**: the local explanation for the inspected true positive (test row 29) is dominated entirely by anonymised V-features (V113, V330, V118, V162, …) with no overlap with the global SHAP top features. With 426 correlated features, LIME's local linear surrogate is sensitive to the perturbation neighbourhood and should not be interpreted as a reliable local explanation here.
 
